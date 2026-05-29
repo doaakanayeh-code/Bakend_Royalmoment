@@ -15,7 +15,7 @@ return new class extends Migration {
 
             // جعلنا رقم الهاتف nullable وأضفنا الإيميل nullable 
             // لكي يعمل الجدول مع الطريقتين (هاتف أو إيميل) بنفس المنطق
-            $table->string('phone')->nullable();
+            $table->string('identifier')->nullable();
             $table->string('email')->nullable();
 
             $table->string('otp');

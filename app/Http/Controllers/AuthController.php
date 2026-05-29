@@ -260,20 +260,17 @@ public function logout()
 
     return response()->json(['message' => __('messages.password_reset_successfully')]);
 }
-    public function verifyForgotOtp(Request $request)
+public function verifyForgotOtp(Request $request)
 {
     $request->validate([
-        'identifier' => 'required|string', // الهاتف أو الإيميل
+        'identifier' => 'required|string', 
         'otp'        => 'required|string',
     ]);
 
-    $otp = Otp::where(function($query) use ($request) {
-            $query->where('phone', $request->identifier)
-                  ->orWhere('email', $request->identifier);
-        })
+    // البحث في جدول الـ otps الجديد باستخدام عمود identifier الموحد مباشرة
+    $otp = Otp::where('identifier', $request->identifier)
         ->where('otp', $request->otp)
         ->where('used', false)
-        ->where('expires_at', '>', now())
         ->latest()
         ->first();
 
@@ -284,7 +281,7 @@ public function logout()
     $otp->update(['used' => true]);
 
     return response()->json([
-        'message' => __('messages.Verification_successful_You_can_now_set_a_new_password'),
+        'message'  => __('messages.Verification_successful_You_can_now_set_a_new_password'),
         'verified' => true,
     ]);
 }

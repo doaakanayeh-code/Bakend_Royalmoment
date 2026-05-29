@@ -8,7 +8,7 @@ class Otp extends Model
 {
     //
     protected $fillable = [
-    'phone',
+    'identifier',
     'email',
     'otp',
     'used',
