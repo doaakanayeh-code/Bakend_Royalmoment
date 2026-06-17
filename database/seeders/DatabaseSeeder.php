@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        \Database\Factories\AdminFactory::new()->withToken()->create();
         // User::factory(10)->create();
 
        User::factory()->create([

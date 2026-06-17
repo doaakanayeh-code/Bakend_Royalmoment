@@ -7,10 +7,18 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "google-gemini-php/laravel": "^2.0",
+        "google/cloud-vision": "^2.2",
+        "intervention/image": "2.7",
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.3",
         "laravel/socialite": "^5.27",
-        "laravel/tinker": "^2.10.1"
+        "laravel/tinker": "^2.10.1",
+        "maatwebsite/excel": "^3.1",
+        "openai-php/client": "^0.19.2",
+        "openai-php/laravel": "^0.19.1",
+        "prism-php/prism": "^0.100.1",
+        "thiagoalessio/tesseract_ocr": "^2.13"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

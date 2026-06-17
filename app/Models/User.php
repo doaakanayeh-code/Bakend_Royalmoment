@@ -6,11 +6,16 @@ use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 //use Laravel\Passport\HasApiTokens;
-class User extends Authenticatable
+use Illuminate\Auth\Passwords\CanResetPassword;
+use Illuminate\Contracts\Auth\CanResetPassword as AuthCanResetPassword;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+class User extends Authenticatable implements MustVerifyEmail, AuthCanResetPassword
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable,SoftDeletes, CanResetPassword;
 
     /**
      * The attributes that are mass assignable.
@@ -27,6 +32,8 @@ class User extends Authenticatable
     'role',    // <--- أضيفي هذا السطر هنا
     'google_id',
     'google_token',
+     'ocr_text',
+     'is_blocked',
     //'status',
 ];
 
@@ -38,6 +45,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'is_blocked'        => 'boolean',
     ];
 
     /**
