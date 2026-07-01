@@ -6,9 +6,19 @@ use App\Models\Provider;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
-
+use App\Models\ContactMessage; 
+use Illuminate\Support\Facades\Mail;
+use App\Services\OtpService;
+use Illuminate\Support\Facades\Cache;
 class AdminController extends Controller
 {
+    protected OtpService $otpService;
+
+    public function __construct(OtpService $otpService)
+    {
+        $this->otpService = $otpService;
+    }
+
     //عرض كل المستخدمين
 public function index()
 {
@@ -740,5 +750,300 @@ public function addProvider(Request $request)
         'user'    => $user
     ], 201);
 }
+//عرض كل الحجوزات
+public function getAllBookings(Request $request)
+    {
+        $query = Booking::query()->with(['user:id,username', 'provider:id,username']);
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('provider_id')) {
+            $query->where('provider_id', $request->provider_id);
+        }
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->user_id);
+        }
+        if ($request->filled('date')) {
+            $query->whereDate('booking_date', $request->date);
+        }
+        if ($request->filled('date_from') && $request->filled('date_to')) {
+            $query->whereBetween('booking_date', [$request->date_from, $request->date_to]);
+        }
+
+        $bookings = $query->orderBy('booking_date', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'count' => $bookings->count(),
+            'bookings' => $bookings
+        ], 200);
+    }
+
+    // تعديل حالة أي حجز (مع إلغاء التضارب عند القبول)
+public function updateBookingStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status' => 'required|string|in:pending,confirmed,cancelled,completed'
+        ]);
+
+        $booking = Booking::find($id);
+
+        if (!$booking) {
+            return response()->json(['success' => false, 'message' => 'الحجز غير موجود.'], 404);
+        }
+
+        if ($request->status === 'confirmed') {
+            // إلغاء الحجوزات المتضاربة لنفس المزود ونفس الوقت
+            Booking::where('provider_id', $booking->provider_id)
+                ->where('id', '!=', $booking->id)
+                ->where('booking_date', $booking->booking_date)
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled']);
+        }
+
+        $booking->status = $request->status;
+        $booking->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => $request->status === 'confirmed' 
+                ? 'تم تأكيد الحجز من قبل الأدمن، وإلغاء الحجوزات المتضاربة تلقائياً.' 
+                : 'تم تحديث حالة الحجز بنجاح.',
+            'booking' => $booking
+        ], 200);
+    }
+
+// 3. الحذف النهائي من قاعدة البيانات (Force Delete)
+public function forceDeleteBooking($id)
+{
+    $booking = Booking::withTrashed()->find($id);
+
+    if (!$booking) {
+        return response()->json(['success' => false, 'message' => 'الحجز غير موجود مطلقاً.'], 404);
+    }
+
+    $booking->forceDelete(); // حظر وحذف نهائي لا يمكن التراجع عنه
+
+    return response()->json([
+        'success' => true,
+        'message' => 'تم حذف الحجز نهائياً من قاعدة البيانات.'
+    ], 200);
+}
+
+public function getMessages(Request $request)
+    {
+        $query = ContactMessage::query();
+
+        // فلترة بحسب الحالة (read أو unread)
+        if ($request->filled('status')) {
+            $isRead = $request->status === 'read' ? true : false;
+            $query->where('is_read', $isRead);
+        }
+
+        // 💡 تعديل: البحث باسم المرسل، إيميله، أو رقم هاتفه (مطابق للتصميم)
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'LIKE', "%{$search}%")
+                  ->orWhere('email', 'LIKE', "%{$search}%")
+                  ->orWhere('phone', 'LIKE', "%{$search}%"); // تم استبدال subject بـ phone
+            });
+        }
+
+        $messages = $query->orderBy('created_at', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'count' => $messages->count(),
+            'messages' => $messages
+        ], 200);
+    }
+
+    // 2. عرض تفاصيل رسالة محددة وتحويلها تلقائياً إلى "مقروءة"
+    public function showMessage($id)
+    {
+        $message = ContactMessage::find($id);
+
+        if (!$message) {
+            return response()->json(['success' => false, 'message' => 'الرسالة غير موجودة.'], 404);
+        }
+
+        // تحويلها لمقروءة بمجرد فتحها
+        $message->is_read = true;
+        $message->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => $message
+        ], 200);
+    }
+
+   
+    // 4. حذف الرسالة
+    public function destroyMessage($id)
+    {
+        $message = ContactMessage::find($id);
+
+        if (!$message) {
+            return response()->json(['success' => false, 'message' => 'الرسالة غير موجودة.'], 404);
+        }
+
+        $message->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'تم حذف الرسالة بنجاح.'
+        ], 200);
+    }
+//ارسال رسالة جماعية 
+    public function sendBroadcastMessage(Request $request)
+{
+    $request->validate([
+        'target' => 'required|string|in:all,users,providers',
+        'type'   => 'required|string|in:email,sms,both',
+        'title'  => 'required|string|min:5',
+        'content'=> 'required|string|min:10',
+    ]);
+    $lockKey = 'broadcast_lock_' . md5($request->title . $request->content);
+    if (Cache::has($lockKey)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'هذه الرسالة يتم إرسالها حالياً بالفعل! يرجى الانتظار حتى تنتهي العملية.'
+        ], 429); 
+    }
+    Cache::put($lockKey, true, now()->addMinutes(5));
+    $query = User::query();
+    if ($request->target === 'users') {
+        $query->where('role', 'user');
+    } elseif ($request->target === 'providers') {
+        $query->where('role', 'provider');
+    }
+    
+    $recipients = $query->get();
+
+    if ($recipients->isEmpty()) {
+        Cache::forget($lockKey); 
+        return response()->json(['success' => false, 'message' => 'لا يوجد مستخدمين لإرسال الرسالة إليهم.'], 404);
+    }
+
+    $emailCount = 0;
+    $smsCount = 0;
+    $uniqueEmails = [];
+    $uniquePhones = [];
+
+    foreach ($recipients as $recipient) {
+            if (($request->type === 'email' || $request->type === 'both') && !empty($recipient->email)) {
+            if (!in_array($recipient->email, $uniqueEmails)) {
+                $userEmail = $recipient->email;
+                $title = $request->title;
+                $content = $request->content;
+
+                Mail::raw($content, function ($mail) use ($userEmail, $title) {
+                    $mail->to($userEmail)
+                         ->subject("📢 إعلان هام: " . $title . " - Royal Moments");
+                });
+
+                $uniqueEmails[] = $recipient->email; 
+                $emailCount++;
+            }
+        }
+        if (($request->type === 'sms' || $request->type === 'both') && !empty($recipient->phone)) {
+            if (!in_array($recipient->phone, $uniquePhones)) {
+                $smsText = "📢 " . $request->title . "\n" . $request->content;
+                
+                $smsSuccess = $this->otpService->sendMessage($recipient->phone, $smsText);
+                if ($smsSuccess) {
+                    $uniquePhones[] = $recipient->phone; 
+                    $smsCount++;
+                }
+            }
+        }
+    }
+    Cache::forget($lockKey);
+
+    return response()->json([
+        'success' => true,
+        'message' => "تمت عملية الإرسال الجماعي بنجاح وضمان عدم التكرار.",
+        'details' => [
+            'total_targets' => $recipients->count(),
+            'unique_emails_sent' => $emailCount,
+            'unique_sms_sent' => $smsCount
+        ]
+    ], 200);
+}
+
+// public function storeMessage(Request $request)
+// {
+  
+//     $request->validate([
+//         'message' => 'required|string|min:5',
+//     ]);
+
+ 
+//     $user = auth()->user();
+
+//     $contactMessage = ContactMessage::create([
+//     'name'    => $user->username ?? 'مستخدم غير مسمى', 
+//     'email'   => $user->email ?? null,
+//     'phone'   => $user->phone ?? null,
+//     'message' => $request->message,
+//     'is_read' => false,
+//     'status'  => 'pending',
+// ]);
+//     return response()->json([
+//         'success' => true,
+//         'message' => 'تم إرسال رسالتك بنجاح، شكرًا لتواصلك معنا!',
+//         'data'    => $contactMessage
+//     ], 201);
+// }
+// جلب الإيرادات والأرباح الإجمالية حسب الفترة
+public function getRevenueReport(Request $request)
+{
+    $period = $request->query('period', 'all'); // الافتراضي يعرض الكل (طالما)
+    $query = Booking::where('status', 'completed');
+
+    if ($period === 'daily') {
+        $query->whereDate('created_at', now()->today());
+    } elseif ($period === 'monthly') {
+        $query->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year);
+    } elseif ($period === 'yearly') {
+        $query->whereYear('created_at', now()->year);
+    }
+
+    return response()->json([
+        'success' => true,
+        'period'  => $period,
+        'total_revenue'   => $query->sum('total_amount'), // كل المصاري الي دخلت السيستم
+        'app_net_profit'  => $query->sum('app_commission'), // صافي ربح التطبيق من العمولات
+    ], 200);
+}
+
+// جلب قائمة العمولات والمبالغ الخاصة بكل مزود خدمة
+public function getProvidersCommissions()
+{
+    $providers = User::where('role', 'provider')
+        ->select('id', 'name')
+        ->withSum(['bookings as total_collected' => function($q) {
+            $q->where('status', 'completed');
+        }], 'total_amount')
+        ->withSum(['bookings as app_commission_earned' => function($q) {
+            $q->where('status', 'completed');
+        }], 'app_commission')
+        ->get()
+        ->map(function ($provider) {
+            // حساب كم يتبقى للمزود صافي بعد خصم عمولة التطبيق
+            $provider->provider_net_profit = ($provider->total_collected ?? 0) - ($provider->app_commission_earned ?? 0);
+            return $provider;
+        });
+
+    return response()->json([
+        'success' => true,
+        'providers_commissions' => $providers
+    ], 200);
+}
+
+
 
 }
+

@@ -170,10 +170,6 @@ public function register(Request $request, \App\Services\GoogleIdentityService $
         }
     }
 
-
-
-
-
     public function login2(Request $request)
 {
     // 1. التعديل في التحقق: نستخدم identifier ونفحص عمود phone

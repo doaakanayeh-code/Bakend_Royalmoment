@@ -12,6 +12,8 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ContactMessageController;
+
 
 Route::get('/settings', [AdminController::class, 'getSettings']);
 
@@ -43,6 +45,7 @@ Route::get('/events', [EventController::class, 'index']); // الزائر يرى
 
 // 2. مسارات تحتاج تسجيل دخول
 Route::middleware('auth:sanctum')->group(function () {
+    
 
     // مسارات خاصة بمزود الخدمة فقط (مثلاً إضافة فعالية)
     Route::post('/events/create', [EventController::class, 'store'])->middleware('checkRole:provider');
@@ -127,8 +130,19 @@ Route::post('admin/providers/add', [AdminController::class, 'addProvider']);
 Route::post('/users/add', [AdminController::class, 'addUser']);
 Route::get('/users/export', [UserController::class, 'export']);
 Route::post('/users/import', [UserController::class, 'import']);
-
-
+Route::post('/admin/bookings/{id}/status', [AdminController::class, 'updateBookingStatus']);
+Route::get('/admin/bookings', [AdminController::class, 'getAllBookings']);
+Route::delete('/admin/bookings/{id}/force-delete', [AdminController::class, 'forceDeleteBooking']);
+Route::get('/admin/messages', [AdminController::class, 'getMessages']);
+Route::get('/admin/messages/{id}', [AdminController::class, 'showMessage']);
+Route::post('/admin/messages/{id}/reply', [AdminController::class, 'replyToMessage']);
+Route::delete('/admin/messages/{id}', [AdminController::class, 'destroyMessage']);
+Route::post('/admin/send-broadcast', [AdminController::class, 'sendBroadcastMessage']);
+Route::get('/admin/financial/revenue', [AdminController::class, 'getRevenueReport']);
+Route::get('/admin/financial/commissions', [AdminController::class, 'getProvidersCommissions']);
+Route::post('/messages/{id}/reply', [ContactMessageController::class, 'reply']);
+Route::post('/contact-messages/{id}/reply', [ContactMessageController::class, 'updateReply']);
+Route::delete('/contact-messages/{id}/reply', [ContactMessageController::class, 'deleteReply']);
 });
-
+Route::post('/store', [ContactMessageController::class, 'store']);
 
