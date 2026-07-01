@@ -32,12 +32,20 @@ class UsersExport implements FromCollection, WithHeadings, WithMapping
    
     public function map($user): array
     {
+        $status = 'Active'; // الحالة الافتراضية
+
+    if ($user->deleted_at !== null) {
+        $status = 'Deleted'; // محذوف
+    } elseif ($user->is_blocked == 1) {
+        $status = 'Blocked'; // محظور
+    }
+
         return [
             $user->username,
             $user->email,
             $user->phone ?? '-', 
             $user->role,
-            $user->is_blocked ? 'Blocked' : 'Active', 
+            $status,
         ];
     }
 }
